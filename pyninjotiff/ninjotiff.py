@@ -354,10 +354,6 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
         if isinstance(img, np.ma.MaskedArray):
             data = img.channels[0]
         else :
-            # TODO: check what is the corret fill value for NinJo!
-            if fill_value is not None:
-                log.debug("Forcing fill value to %s", fill_value)
-            data = img.finalize(dtype=dtype, fill_value=fill_value)
             # Go back to the masked_array for compatibility
             # with the following part of the code.
             data = data[0].to_masked_array()
@@ -382,13 +378,23 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
                 # Make room for transparent pixel.
                 scale_fill_value = (
                     (np.iinfo(dtype).max) / (np.iinfo(dtype).max + 1.0))
-                img = deepcopy(img)
-                img.channels[0] *= scale_fill_value
 
-                img.channels[0] += 1 / (np.iinfo(dtype).max + 1.0)
+                if isinstance(img, np.ma.MaskedArray):
+                    img = deepcopy(img)
+                    img.channels[0] *= scale_fill_value
+                    img.channels[0] += 1 / (np.iinfo(dtype).max + 1.0)
 
-                channels, fill_value = img._finalize(dtype)
-                data = channels[0]
+                    channels, fill_value = img._finalize(dtype)
+                    data = channels[0]
+                else:
+                    img1 = deepcopy(img)
+                    data_tmp = img.data * scale_fill_value
+                    data_tmp = data_tmp  + (1 / (np.iinfo(dtype).max + 1.0))
+                    img1.data = data_tmp
+                    img1.data.attrs = img.data.attrs
+                    img = img1
+                    channels, type = img.finalize(dtype=dtype, fill_value=fill_value)
+                    data = channels[0].to_masked_array()
 
                 scale = ((value_range_measurement_unit[1] -
                           value_range_measurement_unit[0]) /
@@ -445,11 +451,7 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
                                                                 d__.max()))
                 del d__
 
-        if isinstance(img, np.ma.MaskedArray):
-            return data, scale, offset, fill_value
-        else:
-            # returns the data band
-            return data[0], scale, offset, fill_value
+        return data, scale, offset, fill_value
 
     elif img.mode == 'RGB':
         if isinstance(img, np.ma.MaskedArray):
