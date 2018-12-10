@@ -356,7 +356,7 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
         else :
             # Go back to the masked_array for compatibility
             # with the following part of the code.
-            data = data[0].to_masked_array()
+            data = img.data[0].to_masked_array()
 
         fill_value = fill_value if fill_value is not None else np.iinfo(dtype).min 
 
