@@ -388,12 +388,12 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
                     data = channels[0]
                 else:
                     img1 = deepcopy(img)
-                    data_tmp = img.data * scale_fill_value
+                    data_tmp = img.data.clip(0,1)
+                    data_tmp = data_tmp * scale_fill_value
                     data_tmp = data_tmp  + (1 / (np.iinfo(dtype).max + 1.0))
                     img1.data = data_tmp
                     img1.data.attrs = img.data.attrs
-                    img = img1
-                    channels, type = img.finalize(dtype=dtype, fill_value=fill_value)
+                    channels, type = img1.finalize(dtype=dtype, fill_value=fill_value)
                     data = channels[0].to_masked_array()
 
                 scale = ((value_range_measurement_unit[1] -
