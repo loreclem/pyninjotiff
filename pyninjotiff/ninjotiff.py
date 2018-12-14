@@ -354,17 +354,14 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
         # PFE: mpop.satout.cfscene
         if isinstance(img, np.ma.MaskedArray):
             data = img.channels[0]
-        else :
-            # Go back to the masked_array for compatibility
-            # with the following part of the code.
-            data = img.data[0].to_masked_array()
 
         fill_value = fill_value if fill_value is not None else np.iinfo(dtype).min 
 
-        log.debug("Before scaling: %.2f, %.2f, %.2f" %
-                  (data.min(), data.mean(), data.max()))
+        if isinstance(img, np.ma.MaskedArray):
+            log.debug("Before scaling: %.2f, %.2f, %.2f" %
+                      (data.min(), data.mean(), data.max()))
 
-        if np.ma.count_masked(data) == data.size:
+        if isinstance(img, np.ma.MaskedArray) and np.ma.count_masked(data) == data.size:
             # All data is masked
             data = np.ones(data.shape, dtype=dtype) * fill_value
             scale = 1
