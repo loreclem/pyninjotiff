@@ -35,6 +35,7 @@ Edited by Christian Kliche (Ernst Basler + Partner) to replace pylibtiff with
 a modified version of tifffile.py (created by Christoph Gohlke)
 """
 
+from __future__ import print_function
 import calendar
 import logging
 import os
@@ -316,7 +317,7 @@ def _get_satellite_altitude(filename):
 
 
 def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
-              data_is_scaled_01=True, fill_value=None):
+              data_is_scaled_01=True, fill_value=None, invert_colorscale=False):
     """Finalize a mpop GeoImage for Ninjo. Specialy take care of phycical scale
     and offset.
 
@@ -378,7 +379,6 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
                 # Make room for transparent pixel.
                 scale_fill_value = (
                     (np.iinfo(dtype).max) / (np.iinfo(dtype).max + 1.0))
-
                 if isinstance(img, np.ma.MaskedArray):
                     img = deepcopy(img)
                     img.channels[0] *= scale_fill_value
@@ -388,7 +388,8 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
                     data = channels[0]
                 else:
                     img1 = deepcopy(img)
-                    data_tmp = img.data.clip(0,1)
+                    if img.data.max() > 1.0 or img.data.min() < 0.0:
+                        data_tmp = 1.0 / (img.data.max() - img.data.min()) * (img.data - img.data.max()) + 	1.0
                     data_tmp = data_tmp * scale_fill_value
                     data_tmp = data_tmp  + (1 / (np.iinfo(dtype).max + 1.0))
                     img1.data = data_tmp
@@ -396,16 +397,23 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
                     channels, type = img1.finalize(dtype=dtype, fill_value=fill_value)
                     data = channels[0].to_masked_array()
 
-                scale = ((value_range_measurement_unit[1] -
-                          value_range_measurement_unit[0]) /
-                         (np.iinfo(dtype).max))
-                # Handle the case where all data has the same value.
-                scale = scale or 1
-                offset = value_range_measurement_unit[0]
+                if invert_colorscale:
+                    log.debug("Inverting colorscale for compatibility with Swiss NinJo")
+                    scale = ((value_range_measurement_unit[0] - 
+                              value_range_measurement_unit[1]) /
+                             (np.iinfo(dtype).max))
+                    scale = scale or 1
+                    offset = value_range_measurement_unit[1]
+                else:
+                    scale = ((value_range_measurement_unit[0] -
+                              value_range_measurement_unit[1]) /
+                             (np.iinfo(dtype).max))
+                    # Handle the case where all data has the same value.
+                    scale = scale or 1
+                    offset = value_range_measurement_unit[1]
+                    offset -= scale
 
                 mask = data.mask
-
-                offset -= scale
 
                 if fill_value is None:
                     fill_value = 0
@@ -547,6 +555,9 @@ def save(img, filename, ninjo_product_name=None, writer_options=None,
     if 'fill_value' in kwargs and kwargs['fill_value'] != None:
         fill_value = int(kwargs['fill_value'])
 
+    invert_colorscale = False
+    if 'invert_colorscale' in kwargs:
+        invert_colorscale = bool(kwargs['invert_colorscale'])
 
     try:
         value_range_measurement_unit = (float(kwargs["ch_min_measurement_unit"]),
@@ -563,7 +574,8 @@ def save(img, filename, ninjo_product_name=None, writer_options=None,
                                                 dtype=dtype,
                                                 data_is_scaled_01=data_is_scaled_01,
                                                 value_range_measurement_unit=value_range_measurement_unit,
-                                                fill_value=fill_value,)
+                                                fill_value=fill_value,
+                                                invert_colorscale=invert_colorscale,)
 
     if isinstance(img, np.ma.MaskedArray):
         area_def = img.info['area']
@@ -822,12 +834,12 @@ def _write(image_data, output_fn, write_rgb=False, **kwargs):
         # Basic B&W colormap
         if nbits16:
             if reverse:
-                return [[x for x in range(65535, -1, -1)]] * 3
-            return [[x for x in range(65536)]] * 3
+                return [[x for x in list(range(65535, -1, -1))]] * 3
+            return [[x for x in list(range(65536))]] * 3
         else:
             if reverse:
                 return [[x * 256 for x in range(255, -1, -1)]] * 3
-            return [[x * 256 for x in range(256)]] * 3
+            return [[x * 256 for x in list(range(256))]] * 3
 
     def _eval_or_none(key, eval_func):
         try:
@@ -1154,9 +1166,10 @@ if __name__ == '__main__':
     try:
         filename = args[0]
     except IndexError:
-        print >> sys.stderr, """usage: python ninjotiff.py [<-p page-number>] [-c] <ninjotiff-filename>
-    -p <page-number>: print page number (default are all pages).
-    -c: print color maps (default is not to print color maps)."""
+        err = """usage: python ninjotiff.py [<-p page-number>] [-c] <ninjotiff-filename>
+                 -p <page-number>: print page number (default are all pages).
+                 -c: print color maps (default is not to print color maps)."""
+        print (err, file=sys.stderr)
         sys.exit(2)
 
     pages = read_tags(filename)
@@ -1164,12 +1177,12 @@ if __name__ == '__main__':
         try:
             pages = [pages[page_no]]
         except IndexError:
-            print >>sys.stderr, "Invalid page number '%d'" % page_no
+            print ("Invalid page number '%d'" % page_no, file=sys.stderr)
             sys.exit(2)
     for page in pages:
         names = sorted(page.keys())
-        print ""
+        print("")
         for name in names:
             if not print_color_maps and name == "color_map":
                 continue
-            print name, page[name]
+            print (name, page[name])
