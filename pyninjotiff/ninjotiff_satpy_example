@@ -22,4 +22,6 @@ local_scene.save_dataset(chn, filename="msg.tif", writer='ninjotiff',
                       data_cat='GORN',
                       data_source='EUMCAST',
                       physic_unit='K',
-                      nbits=8)
+                      nbits=8,
+                      enhancements_config=False,
+                      zero_seconds=True)

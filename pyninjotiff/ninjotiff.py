@@ -317,7 +317,7 @@ def _get_satellite_altitude(filename):
 
 
 def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
-              data_is_scaled_01=True, fill_value=None, invert_colorscale=False):
+              data_is_scaled_01=True, fill_value=None):
     """Finalize a mpop GeoImage for Ninjo. Specialy take care of phycical scale
     and offset.
 
@@ -385,8 +385,17 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
                     data = channels[0]
                 else:
                     img1 = deepcopy(img)
-                    if img.data.max() > 1.0 or img.data.min() < 0.0:
-                        data_tmp = 1.0 / (img.data.max() - img.data.min()) * (img.data - img.data.max()) + 	1.0
+                    vmin = value_range_measurement_unit[0] + 273.15
+                    vmax = value_range_measurement_unit[1] + 273.15
+
+                    if img.data.max() > vmax or img.data.min() < vmin:
+                        # Clip data if not within the required range
+                        data_tmp = img.data.clip(vmin, vmax)
+                    else:
+                        # Rescale the data within the expected range
+                        data_tmp = img.data
+                        data_tmp = 1.0 / (vmax - vmin) * (data_tmp - vmax) + 1.0
+
                     data_tmp = data_tmp * scale_fill_value
                     data_tmp = data_tmp  + (1 / (np.iinfo(dtype).max + 1.0))
                     img1.data = data_tmp
@@ -394,21 +403,13 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
                     channels, type = img1.finalize(dtype=dtype, fill_value=fill_value)
                     data = channels[0].to_masked_array()
 
-                if invert_colorscale:
-                    log.debug("Inverting colorscale for compatibility with Swiss NinJo")
-                    scale = ((value_range_measurement_unit[0] - 
-                              value_range_measurement_unit[1]) /
-                             (np.iinfo(dtype).max))
-                    scale = scale or 1
-                    offset = value_range_measurement_unit[1]
-                else:
-                    scale = ((value_range_measurement_unit[0] -
-                              value_range_measurement_unit[1]) /
-                             (np.iinfo(dtype).max))
-                    # Handle the case where all data has the same value.
-                    scale = scale or 1
-                    offset = value_range_measurement_unit[1]
-                    offset -= scale
+                scale = ((value_range_measurement_unit[0] -
+                          value_range_measurement_unit[1]) /
+                         (np.iinfo(dtype).max))
+                # Handle the case where all data has the same value.
+                scale = scale or 1
+                offset = value_range_measurement_unit[1]
+                offset -= scale
 
                 mask = data.mask
 
@@ -424,6 +425,9 @@ def _finalize(img, dtype=np.uint8, value_range_measurement_unit=None,
                     log.debug("Scaling, using value range %.2f - %.2f" %
                               (value_range_measurement_unit[0], value_range_measurement_unit[1]))
                 else:
+                    if not isinstance(img, np.ma.MaskedArray):
+                        data = img.data[0].to_masked_array()
+
                     chn_max = data.max()
                     chn_min = data.min()
                     log.debug("Doing auto scaling")
@@ -552,10 +556,6 @@ def save(img, filename, ninjo_product_name=None, writer_options=None,
     if 'fill_value' in kwargs and kwargs['fill_value'] != None:
         fill_value = int(kwargs['fill_value'])
 
-    invert_colorscale = False
-    if 'invert_colorscale' in kwargs:
-        invert_colorscale = bool(kwargs['invert_colorscale'])
-
     try:
         value_range_measurement_unit = (float(kwargs["ch_min_measurement_unit"]),
                                         float(kwargs["ch_max_measurement_unit"]))
@@ -571,8 +571,7 @@ def save(img, filename, ninjo_product_name=None, writer_options=None,
                                                 dtype=dtype,
                                                 data_is_scaled_01=data_is_scaled_01,
                                                 value_range_measurement_unit=value_range_measurement_unit,
-                                                fill_value=fill_value,
-                                                invert_colorscale=invert_colorscale,)
+                                                fill_value=fill_value,)
 
     if isinstance(img, np.ma.MaskedArray):
         area_def = img.info['area']
@@ -835,7 +834,7 @@ def _write(image_data, output_fn, write_rgb=False, **kwargs):
             return [[x for x in list(range(65536))]] * 3
         else:
             if reverse:
-                return [[x * 256 for x in range(255, -1, -1)]] * 3
+                return [[x * 256 for x in list(range(255, -1, -1))]] * 3
             return [[x * 256 for x in list(range(256))]] * 3
 
     def _eval_or_none(key, eval_func):
